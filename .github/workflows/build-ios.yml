@@ -1,4 +1,4 @@
-name: Build iOS App (Final Attempt)
+name: Build iOS App (Let Restore Do Its Job)
 
 on:
   workflow_dispatch:
@@ -24,67 +24,23 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      - name: 手动创建所有 project.assets.json 文件（包含正确目标）
+      # 关键修改：只还原主项目，让它自己生成正确的资产文件
+      - name: 还原主项目（让 dotnet 自己处理）
         run: |
-          # 为共享项目创建 net10.0 目标
-          ASSET_JSON_NET10='{
-            "version": 3,
-            "targets": {
-              "net10.0": {}
-            },
-            "libraries": {},
-            "projectFileDependencyGroups": {
-              "net10.0": []
-            },
-            "packageFolders": {},
-            "project": {
-              "restore": {
-                "projectUniqueName": "dummy.csproj",
-                "projectName": "dummy",
-                "projectPath": "dummy.csproj",
-                "packagesPath": "/Users/runner/.nuget/packages/",
-                "outputPath": "obj/",
-                "projectStyle": "PackageReference",
-                "originalTargetFrameworks": ["net10.0"]
-              }
-            }
-          }'
+          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
+            -p:TargetFrameworks=net10.0-ios \
+            -p:RuntimeIdentifiers=ios-arm64 \
+            --runtime ios-arm64
 
-          # 为 iOS 主项目创建 net10.0-ios 目标
-          ASSET_JSON_IOS='{
-            "version": 3,
-            "targets": {
-              "net10.0-ios": {}
-            },
-            "libraries": {},
-            "projectFileDependencyGroups": {
-              "net10.0-ios": []
-            },
-            "packageFolders": {},
-            "project": {
-              "restore": {
-                "projectUniqueName": "OpenUtauMobile.csproj",
-                "projectName": "OpenUtauMobile",
-                "projectPath": "OpenUtauMobile.csproj",
-                "packagesPath": "/Users/runner/.nuget/packages/",
-                "outputPath": "obj/",
-                "projectStyle": "PackageReference",
-                "originalTargetFrameworks": ["net10.0-ios"]
-              }
-            }
-          }'
-
-          # 共享项目使用 net10.0
+      # 共享项目仍然手动创建（或者也可以尝试还原，但可能触发 Android 问题）
+      - name: 手动为共享项目创建资产文件（跳过还原）
+        run: |
+          ASSET_JSON='{"version":3,"targets":{"net10.0":{}},"libraries":{},"projectFileDependencyGroups":{"net10.0":[]},"packageFolders":{},"project":{"restore":{"projectUniqueName":"dummy.csproj","projectName":"dummy","projectPath":"dummy.csproj","packagesPath":"/Users/runner/.nuget/packages/","outputPath":"obj/","projectStyle":"PackageReference","originalTargetFrameworks":["net10.0"]}}}'
           for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers; do
             mkdir -p $proj/obj
-            echo "$ASSET_JSON_NET10" > $proj/obj/project.assets.json
+            echo "$ASSET_JSON" > $proj/obj/project.assets.json
           done
-
-          # 主项目使用 net10.0-ios
-          mkdir -p OpenUtauMobile/obj
-          echo "$ASSET_JSON_IOS" > OpenUtauMobile/obj/project.assets.json
-
-          echo "✅ 所有 project.assets.json 文件已创建（含正确目标框架）"
+          echo "✅ 共享项目的资产文件已创建"
 
       - name: 编译 iOS 主项目
         run: |
@@ -95,9 +51,7 @@ jobs:
             --no-restore \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
-            -p:TargetFrameworks=net10.0-ios \
-            -p:DisableImplicitFrameworkReferences=true \
-            -p:GenerateErrorForMissingTargetingPacks=false
+            -p:TargetFrameworks=net10.0-ios
 
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
