@@ -1,4 +1,4 @@
-name: Build iOS App (Final Attempt)
+name: Build iOS App (Pure Restore)
 
 on:
   workflow_dispatch:
@@ -21,105 +21,59 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
           xcodebuild -version
 
-      - name: 安装 MAUI iOS 工作负载
-        run: dotnet workload install maui-ios
+      - name: 安装 iOS 工作负载
+        run: dotnet workload install ios
 
-      - name: 创建所有项目的资产文件（含运行时目标）
+      - name: 还原所有项目依赖
         run: |
-          python3 << 'EOF'
-          import json
-          import os
+          echo "📦 还原 OpenUtau.Core..."
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj --force
+          
+          echo "📦 还原 OpenUtau.Plugin.Builtin..."
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj --force
+          
+          echo "📦 还原 OpenUtauMobile.Plugin.Renderers..."
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj --force
+          
+          echo "📦 还原 OpenUtauMobile (主项目)..."
+          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
+            -p:TargetFrameworks=net10.0-ios \
+            --runtime ios-arm64 \
+            --force
 
-          # 共享项目的资产文件（net10.0）
-          shared_asset = {
-              "version": 3,
-              "targets": {
-                  "net10.0": {}
-              },
-              "libraries": {},
-              "projectFileDependencyGroups": {
-                  "net10.0": []
-              },
-              "packageFolders": {
-                  "/Users/runner/.nuget/packages/": {}
-              },
-              "project": {
-                  "restore": {
-                      "projectUniqueName": "dummy.csproj",
-                      "projectName": "dummy",
-                      "projectPath": "dummy.csproj",
-                      "packagesPath": "/Users/runner/.nuget/packages/",
-                      "outputPath": "obj/",
-                      "projectStyle": "PackageReference",
-                      "originalTargetFrameworks": ["net10.0"]
-                  }
-              }
-          }
+      - name: 验证资产文件
+        run: |
+          echo "📋 验证资产文件..."
+          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
+            if [ -f "$proj/obj/project.assets.json" ]; then
+              echo "  ✅ $proj/obj/project.assets.json 存在"
+            else
+              echo "  ❌ $proj/obj/project.assets.json 不存在"
+            fi
+          done
 
-          # 主项目的资产文件（net10.0-ios/ios-arm64）
-          main_asset = {
-              "version": 3,
-              "targets": {
-                  "net10.0-ios/ios-arm64": {}
-              },
-              "libraries": {},
-              "projectFileDependencyGroups": {
-                  "net10.0-ios": []
-              },
-              "packageFolders": {
-                  "/Users/runner/.nuget/packages/": {}
-              },
-              "project": {
-                  "restore": {
-                      "projectUniqueName": "OpenUtauMobile.csproj",
-                      "projectName": "OpenUtauMobile",
-                      "projectPath": "OpenUtauMobile.csproj",
-                      "packagesPath": "/Users/runner/.nuget/packages/",
-                      "outputPath": "obj/",
-                      "projectStyle": "PackageReference",
-                      "originalTargetFrameworks": ["net10.0-ios"],
-                      "originalRuntimeIdentifiers": ["ios-arm64"]
-                  }
-              }
-          }
-
-          # 创建共享项目的资产文件
-          for proj in ["OpenUtau.Core", "OpenUtau.Plugin.Builtin", "OpenUtauMobile.Plugin.Renderers"]:
-              os.makedirs(f"{proj}/obj", exist_ok=True)
-              with open(f"{proj}/obj/project.assets.json", "w") as f:
-                  json.dump(shared_asset, f, indent=2)
-              print(f"✅ 创建 {proj}/obj/project.assets.json")
-
-          # 创建主项目的资产文件
-          os.makedirs("OpenUtauMobile/obj", exist_ok=True)
-          with open("OpenUtauMobile/obj/project.assets.json", "w") as f:
-              json.dump(main_asset, f, indent=2)
-          print("✅ 创建 OpenUtauMobile/obj/project.assets.json (包含 net10.0-ios/ios-arm64)")
-          EOF
+      - name: 编译共享项目
+        run: |
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -c Debug --no-restore
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -c Debug --no-restore
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -c Debug --no-restore
 
       - name: 编译 iOS 主项目
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
-            -f net10.0-ios \
             -c Debug \
-            --no-dependencies \
-            --no-restore \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
-            -p:TargetFrameworks=net10.0-ios \
-            -p:DisableImplicitFrameworkReferences=true \
-            -p:GenerateErrorForMissingTargetingPacks=false
+            --no-restore
 
-      - name: 打包 .ipa（如果编译成功）
-        if: success()
+      - name: 打包 .ipa
         run: |
           cd OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/
           mkdir -p Payload
-          mv OpenUtauMobile.app Payload/ 2>/dev/null || echo "未找到 .app 文件"
+          mv OpenUtauMobile.app Payload/ 2>/dev/null || echo "未找到 .app"
           zip -r OpenUtauMobile.ipa Payload/ 2>/dev/null || echo "打包失败"
-          ls -la
 
-      - name: 上传 .ipa 到 Actions 产物
+      - name: 上传 .ipa
         uses: actions/upload-artifact@v4
         with:
           name: OpenUtauMobile-TrollStoreLite
