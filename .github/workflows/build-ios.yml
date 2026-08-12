@@ -1,4 +1,4 @@
-name: Build iOS App (Skip All Dependencies)
+name: Build iOS App (All Manual Assets)
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      - name: 手动创建 project.assets.json 文件（跳过还原）
+      - name: 手动创建所有缺失的 project.assets.json 文件
         run: |
           ASSET_JSON='{
             "version": 3,
@@ -49,19 +49,15 @@ jobs:
             }
           }'
 
-          mkdir -p OpenUtau.Core/obj
-          echo "$ASSET_JSON" > OpenUtau.Core/obj/project.assets.json
+          # 为所有需要的项目创建资产文件
+          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
+            mkdir -p $proj/obj
+            echo "$ASSET_JSON" > $proj/obj/project.assets.json
+          done
 
-          mkdir -p OpenUtau.Plugin.Builtin/obj
-          echo "$ASSET_JSON" > OpenUtau.Plugin.Builtin/obj/project.assets.json
+          echo "✅ 所有 project.assets.json 文件已创建"
 
-          mkdir -p OpenUtauMobile.Plugin.Renderers/obj
-          echo "$ASSET_JSON" > OpenUtauMobile.Plugin.Renderers/obj/project.assets.json
-
-          echo "✅ 手动创建的 project.assets.json 文件已就位"
-
-      # 关键修改：跳过所有依赖检查和还原
-      - name: 编译 iOS 主项目（跳过所有依赖）
+      - name: 编译 iOS 主项目（完全跳过依赖和还原）
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
@@ -71,7 +67,8 @@ jobs:
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
             -p:TargetFrameworks=net10.0-ios \
-            -p:DisableImplicitFrameworkReferences=true
+            -p:DisableImplicitFrameworkReferences=true \
+            -p:GenerateErrorForMissingTargetingPacks=false
 
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
