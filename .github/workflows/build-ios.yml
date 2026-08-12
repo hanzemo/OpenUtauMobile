@@ -1,4 +1,4 @@
-name: Build iOS App (Full Restore with Asset Copy)
+name: Build iOS App (Fix All Asset Targets)
 
 on:
   workflow_dispatch:
@@ -24,35 +24,74 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 第一步：还原所有项目
+      # 还原所有项目（共享项目 + 主项目）
       - name: 还原所有项目
         run: |
+          echo "📦 还原共享项目..."
           dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
           dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
           dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
-          dotnet restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
+          
+          echo "📦 还原主项目..."
           dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
 
-      # 第二步：验证资产文件是否存在
-      - name: 验证资产文件
+      # 检查并修复所有项目的资产文件
+      - name: 检查并修复资产文件中的目标框架
         run: |
-          echo "📋 验证关键项目的资产文件..."
-          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
-            if [ -f "$proj/obj/project.assets.json" ]; then
-              echo "  ✅ $proj/obj/project.assets.json 存在"
-            else
-              echo "  ❌ $proj/obj/project.assets.json 不存在"
+          # 定义需要检查的项目列表及其对应的目标框架
+          # 格式: "项目路径:目标框架"
+          PROJECTS="OpenUtau.Core:net10.0 OpenUtau.Plugin.Builtin:net10.0 OpenUtauMobile.Plugin.Renderers:net10.0 OpenUtauMobile:net10.0-ios"
+          
+          for entry in $PROJECTS; do
+            proj="${entry%:*}"
+            target="${entry#*:}"
+            ASSET_FILE="$proj/obj/project.assets.json"
+            
+            if [ ! -f "$ASSET_FILE" ]; then
+              echo "⚠️ $ASSET_FILE 不存在，跳过"
+              continue
             fi
+            
+            echo "🔍 检查 $ASSET_FILE (目标: $target)..."
+            
+            python3 <<EOF
+          import json
+          import os
+
+          asset_file = "$ASSET_FILE"
+          target = "$target"
+          
+          with open(asset_file, 'r') as f:
+              data = json.load(f)
+
+          # 检查 targets 中是否有目标框架
+          if target not in data.get('targets', {}):
+              print(f"  ❌ {target} 目标不存在，正在添加...")
+              data['targets'][target] = {}
+              
+              # 确保 projectFileDependencyGroups 包含目标框架
+              if 'projectFileDependencyGroups' not in data:
+                  data['projectFileDependencyGroups'] = {}
+              if target not in data['projectFileDependencyGroups']:
+                  data['projectFileDependencyGroups'][target] = []
+              
+              # 重新写入文件
+              with open(asset_file, 'w') as f:
+                  json.dump(data, f, indent=2)
+              print(f"  ✅ 已添加 {target} 目标到 {asset_file}")
+          else:
+              print(f"  ✅ {target} 目标已存在")
+EOF
           done
 
-      # 第三步：编译共享项目
+      # 编译共享项目
       - name: 编译共享项目
         run: |
           dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug --no-restore
           dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug --no-restore
           dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug --no-restore
 
-      # 第四步：编译 iOS 主项目
+      # 编译 iOS 主项目
       - name: 编译 iOS 主项目
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
@@ -62,7 +101,6 @@ jobs:
             -p:EnableCodeSigning=false \
             -p:TargetFrameworks=net10.0-ios
 
-      # 第五步：打包
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
           cd OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/
