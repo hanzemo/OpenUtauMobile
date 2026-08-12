@@ -1,4 +1,4 @@
-name: Build iOS App (Let Restore Do Its Job)
+name: Build iOS App (Compile Shared First)
 
 on:
   workflow_dispatch:
@@ -24,7 +24,6 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 关键修改：只还原主项目，让它自己生成正确的资产文件
       - name: 还原主项目（让 dotnet 自己处理）
         run: |
           dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
@@ -32,8 +31,7 @@ jobs:
             -p:RuntimeIdentifiers=ios-arm64 \
             --runtime ios-arm64
 
-      # 共享项目仍然手动创建（或者也可以尝试还原，但可能触发 Android 问题）
-      - name: 手动为共享项目创建资产文件（跳过还原）
+      - name: 为共享项目创建资产文件（跳过还原）
         run: |
           ASSET_JSON='{"version":3,"targets":{"net10.0":{}},"libraries":{},"projectFileDependencyGroups":{"net10.0":[]},"packageFolders":{},"project":{"restore":{"projectUniqueName":"dummy.csproj","projectName":"dummy","projectPath":"dummy.csproj","packagesPath":"/Users/runner/.nuget/packages/","outputPath":"obj/","projectStyle":"PackageReference","originalTargetFrameworks":["net10.0"]}}}'
           for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers; do
@@ -41,6 +39,26 @@ jobs:
             echo "$ASSET_JSON" > $proj/obj/project.assets.json
           done
           echo "✅ 共享项目的资产文件已创建"
+
+      # 关键修改：先编译共享项目，生成 .dll 文件
+      - name: 编译共享项目
+        run: |
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj \
+            -f net10.0 \
+            -c Debug \
+            --no-dependencies \
+            --no-restore
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj \
+            -f net10.0 \
+            -c Debug \
+            --no-dependencies \
+            --no-restore
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj \
+            -f net10.0 \
+            -c Debug \
+            --no-dependencies \
+            --no-restore
+          echo "✅ 共享项目编译完成"
 
       - name: 编译 iOS 主项目
         run: |
