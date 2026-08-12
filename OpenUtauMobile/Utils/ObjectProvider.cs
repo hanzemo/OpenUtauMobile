@@ -24,7 +24,7 @@ namespace OpenUtauMobile.Utils
         public static Random Random { get; } = new Random();
         public static IAppLifeCycleHelper AppLifeCycleHelper { get; set; } = null!;
         public static SKTypeface NotoSansCJKscRegularTypeface { get; set; } = null!;
-        
+
         public static void Initialize()
         {
 #if ANDROID
@@ -54,7 +54,7 @@ namespace OpenUtauMobile.Utils
                 NotoSansCJKscRegularTypeface = SKTypeface.Default;
             }
         }
-        
+
         public static async Task<string> PickFile(string[] types, ContentPage context)
         {
             if (ExternalStorageService == null)
@@ -62,143 +62,92 @@ namespace OpenUtauMobile.Utils
                 throw new InvalidOperationException("ExternalStorageService is not initialized. Call ObjectProvider.Initialize() first.");
             }
 #if IOS
-            // iOS 使用原生文件选择器
             try
             {
-                // iOS 需要使用 UTType，将扩展名转换为对应的 UTType
-                var utTypes = new List<string>();
-                foreach (var ext in types)
-                {
-                    var cleanExt = ext.TrimStart('.');
-                    switch (cleanExt.ToLower())
-                    {
-                        case "zip":
-                            utTypes.Add("public.zip-archive");
-                            break;
-                        case "rar":
-                            utTypes.Add("com.rarlab.rar-archive");
-                            break;
-                        case "uar":
-                        case "vogeon":
-                        case "ustx":
-                        case "vsqx":
-                        case "ust":
-                        case "ufdata":
-                        case "musicxml":
-                            utTypes.Add("public.data");
-                            break;
-                        case "mid":
-                        case "midi":
-                            utTypes.Add("public.midi-audio");
-                            break;
-                        case "wav":
-                            utTypes.Add("com.microsoft.waveform-audio");
-                            break;
-                        case "mp3":
-                            utTypes.Add("public.mp3");
-                            break;
-                        case "flac":
-                            utTypes.Add("org.xiph.flac");
-                            break;
-                        case "ogg":
-                            utTypes.Add("org.xiph.ogg");
-                            break;
-                        default:
-                            utTypes.Add("public.data");
-                            break;
-                    }
-                }
-                utTypes = utTypes.Distinct().ToList();
-                
-                var customFileTypes = new Dictionary<DevicePlatform, IEnumerable<string>>
-                {
-                    { DevicePlatform.iOS, utTypes }
-                };
+                // ========== 步骤 1 ==========
+                await Toast.Make("🔵 开始选择文件...", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+
+                // 不限制文件类型，让用户可以选择任何文件
                 var options = new PickOptions
                 {
-                    PickerTitle = AppResources.SelectFileToast,
-                    FileTypes = new FilePickerFileType(customFileTypes)
+                    PickerTitle = AppResources.SelectFileToast
                 };
-                
+
+                // ========== 步骤 2 ==========
+                await Toast.Make("🔵 文件选择器已打开", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+
                 var result = await FilePicker.Default.PickAsync(options);
-                if (result != null)
+
+                // ========== 步骤 3 ==========
+                if (result == null)
                 {
-                    // 检查文件类型
-                    bool typeMatched = false;
-                    foreach (string type in types)
+                    await Toast.Make("⛔ 未选择文件", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                    return string.Empty;
+                }
+
+                await Toast.Make($"✅ 已选择: {Path.GetFileName(result.FullPath)}", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+
+                // ========== 步骤 4：检查文件类型 ==========
+                bool typeMatched = false;
+                foreach (string type in types)
+                {
+                    if (result.FullPath.EndsWith(type, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (result.FullPath.EndsWith(type, StringComparison.OrdinalIgnoreCase))
-                        {
-                            typeMatched = true;
-                            break;
-                        }
-                    }
-                    if (!typeMatched)
-                    {
-                        string stringBuilder = string.Format(AppResources.WrongFileTypeToast, string.Join("，*", types));
-                        await Toast.Make(stringBuilder, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
-                        return string.Empty;
-                    }
-                    
-                    // iOS 安全范围 URL 需要通过 Stream 读取，然后复制到应用可访问的目录
-                    try
-                    {
-                        // 获取文件名
-                        string fileName = Path.GetFileName(result.FullPath);
-                        // 目标路径：Documents/Import/
-                        string importDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Import");
-                        if (!Directory.Exists(importDir))
-                        {
-                            Directory.CreateDirectory(importDir);
-                        }
-                        
-                        // 检查目录是否可写
-                        try
-                        {
-                            string testFile = Path.Combine(importDir, "_test.tmp");
-                            File.WriteAllText(testFile, "test");
-                            File.Delete(testFile);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error(ex, "Documents/Import 目录不可写");
-                            await Toast.Make("存储目录不可写，请检查权限", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
-                            return string.Empty;
-                        }
-                        
-                        string destPath = Path.Combine(importDir, fileName);
-                        
-                        // 如果文件已存在，添加时间戳避免冲突
-                        if (File.Exists(destPath))
-                        {
-                            string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-                            string ext = Path.GetExtension(fileName);
-                            destPath = Path.Combine(importDir, $"{nameWithoutExt}_{DateTime.Now:yyyyMMddHHmmss}{ext}");
-                        }
-                        
-                        // 使用 FilePicker 返回的 Stream 读取文件（这是安全范围访问的正确方式）
-                        using (var sourceStream = await result.OpenReadAsync())
-                        using (var destStream = File.Create(destPath))
-                        {
-                            await sourceStream.CopyToAsync(destStream);
-                        }
-                        
-                        Log.Information($"iOS: Copied file from picker to {destPath}");
-                        return destPath;
-                    }
-                    catch (Exception copyEx)
-                    {
-                        Log.Error(copyEx, "iOS: Failed to copy file from picker");
-                        // 显示错误提示给用户
-                        await Toast.Make("文件复制失败，请检查存储空间或权限", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
-                        return string.Empty;
+                        typeMatched = true;
+                        break;
                     }
                 }
-                return string.Empty;
+                if (!typeMatched)
+                {
+                    string stringBuilder = string.Format(AppResources.WrongFileTypeToast, string.Join("，*", types));
+                    await Toast.Make(stringBuilder, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                    return string.Empty;
+                }
+
+                // ========== 步骤 5：准备复制文件 ==========
+                await Toast.Make("📂 正在复制文件...", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+
+                string fileName = Path.GetFileName(result.FullPath);
+                string importDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Import");
+                Directory.CreateDirectory(importDir);
+
+                string destPath = Path.Combine(importDir, fileName);
+
+                // 如果文件已存在，添加时间戳避免冲突
+                if (File.Exists(destPath))
+                {
+                    string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                    string ext = Path.GetExtension(fileName);
+                    destPath = Path.Combine(importDir, $"{nameWithoutExt}_{DateTime.Now:yyyyMMddHHmmss}{ext}");
+                }
+
+                // ========== 步骤 6：使用超时机制复制文件 ==========
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    using (var sourceStream = await result.OpenReadAsync())
+                    using (var destStream = File.Create(destPath))
+                    {
+                        await sourceStream.CopyToAsync(destStream, cts.Token);
+                    }
+
+                    await Toast.Make($"✅ 文件导入成功: {Path.GetFileName(destPath)}", CommunityToolkit.Maui.Core.ToastDuration.Long, 16).Show();
+                    return destPath;
+                }
+                catch (OperationCanceledException)
+                {
+                    await Toast.Make("⏰ 文件复制超时 (30秒)，请重试", CommunityToolkit.Maui.Core.ToastDuration.Long, 16).Show();
+                    return string.Empty;
+                }
+                catch (Exception copyEx)
+                {
+                    await Toast.Make($"❌ 复制失败: {copyEx.Message}", CommunityToolkit.Maui.Core.ToastDuration.Long, 16).Show();
+                    return string.Empty;
+                }
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "iOS FilePicker failed");
+                await Toast.Make($"❌ 错误: {ex.Message}", CommunityToolkit.Maui.Core.ToastDuration.Long, 16).Show();
                 return string.Empty;
             }
 #else
@@ -250,15 +199,15 @@ namespace OpenUtauMobile.Utils
                 {
                     Directory.CreateDirectory(projectsDir);
                 }
-                
+
                 string fileName = string.IsNullOrEmpty(initialFileName) ? $"project_{DateTime.Now:yyyyMMddHHmmss}" : initialFileName;
                 if (types.Length > 0 && !fileName.EndsWith(types[0], StringComparison.OrdinalIgnoreCase))
                 {
                     fileName += types[0];
                 }
-                
+
                 string filePath = Path.Combine(projectsDir, fileName);
-                
+
                 int counter = 1;
                 string baseName = Path.GetFileNameWithoutExtension(fileName);
                 string ext = Path.GetExtension(fileName);
@@ -267,7 +216,7 @@ namespace OpenUtauMobile.Utils
                     filePath = Path.Combine(projectsDir, $"{baseName}_{counter}{ext}");
                     counter++;
                 }
-                
+
                 Log.Information($"iOS: Save file path: {filePath}");
                 return filePath;
             }
