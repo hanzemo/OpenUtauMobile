@@ -24,20 +24,20 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 关键修改：使用 dotnet msbuild 替代 msbuild
-      - name: 还原所有项目（使用 dotnet msbuild）
+      # 只还原共享依赖项目，不碰解决方案
+      - name: 还原共享依赖项目
         run: |
-          dotnet msbuild -t:Restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
-          dotnet msbuild -t:Restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
-          dotnet msbuild -t:Restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
-          dotnet msbuild -t:Restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj -p:TargetFrameworks=net10.0-ios -p:RuntimeIdentifier=ios-arm64
-          dotnet msbuild -t:Restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios -p:RuntimeIdentifier=ios-arm64
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
 
-      - name: 编译生成未签名的 .app 包
+      # 关键修改：编译主项目时跳过依赖检查
+      - name: 编译 iOS 主项目（跳过依赖检查）
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
             -c Debug \
+            --no-dependencies \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
             -p:TargetFrameworks=net10.0-ios
