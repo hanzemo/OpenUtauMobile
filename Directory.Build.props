@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
     <PropertyGroup>
         <AvaloniaVersion>12.1.0</AvaloniaVersion>
         <!-- OpenUtau Mobile 版本号 -->
@@ -21,6 +21,10 @@
         <BuildMachine Condition="'$(BuildMachine)' == ''">Unknown</BuildMachine>
         <SourceCommit Condition="'$(SourceCommit)' == ''">Unknown</SourceCommit>
         <ActionRunId Condition="'$(ActionRunId)' == ''">Unknown</ActionRunId>
+        
+        <!-- ========== 新增这一行 ========== -->
+        <TargetFrameworks>net10.0</TargetFrameworks>
+        <!-- =============================== -->
     </PropertyGroup>
     <!-- 启用预览语言特性 -->
     <PropertyGroup>
