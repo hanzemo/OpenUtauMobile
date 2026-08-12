@@ -24,28 +24,50 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      - name: 还原共享依赖项目（统一输出目录）
+      - name: 强制编译共享项目（跳过还原和依赖检查）
         run: |
-          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0 -p:BaseIntermediateOutputPath=obj/
-          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0 -p:BaseIntermediateOutputPath=obj/
-          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0 -p:BaseIntermediateOutputPath=obj/
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj \
+            -f net10.0 \
+            -c Debug \
+            --no-restore \
+            --no-dependencies \
+            -p:DisableImplicitNuGetFallbackFolder=true \
+            -p:GeneratePackageOnBuild=false
 
-      - name: 编译共享依赖项目（统一输出目录）
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj \
+            -f net10.0 \
+            -c Debug \
+            --no-restore \
+            --no-dependencies \
+            -p:DisableImplicitNuGetFallbackFolder=true \
+            -p:GeneratePackageOnBuild=false
+
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj \
+            -f net10.0 \
+            -c Debug \
+            --no-restore \
+            --no-dependencies \
+            -p:DisableImplicitNuGetFallbackFolder=true \
+            -p:GeneratePackageOnBuild=false
+
+      - name: 手动将编译好的 .dll 复制到主项目目录
         run: |
-          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug -p:BaseIntermediateOutputPath=obj/
-          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug -p:BaseIntermediateOutputPath=obj/
-          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug -p:BaseIntermediateOutputPath=obj/
+          mkdir -p OpenUtauMobile/References/
+          cp OpenUtau.Core/bin/Debug/net10.0/OpenUtau.Core.dll OpenUtauMobile/References/
+          cp OpenUtau.Plugin.Builtin/bin/Debug/net10.0/OpenUtau.Plugin.Builtin.dll OpenUtauMobile/References/
+          cp OpenUtauMobile.Plugin.Renderers/bin/Debug/net10.0/OpenUtauMobile.Plugin.Renderers.dll OpenUtauMobile/References/
 
-      - name: 编译 iOS 主项目（统一输出目录）
+      - name: 编译 iOS 主项目（直接引用手动复制的 .dll）
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
             -c Debug \
+            --no-restore \
             --no-dependencies \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
             -p:TargetFrameworks=net10.0-ios \
-            -p:BaseIntermediateOutputPath=obj/
+            -p:ReferencePath=OpenUtauMobile/References/
 
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
