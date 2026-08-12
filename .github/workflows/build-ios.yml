@@ -1,4 +1,4 @@
-name: Build iOS App (Pure Restore)
+name: Build iOS App (Build Handles Restore)
 
 on:
   workflow_dispatch:
@@ -24,47 +24,36 @@ jobs:
       - name: 安装 iOS 工作负载
         run: dotnet workload install ios
 
-      - name: 还原所有项目依赖
+      # 直接编译共享项目，让 dotnet build 自己处理还原
+      - name: 编译共享项目（自动还原）
         run: |
-          echo "📦 还原 OpenUtau.Core..."
-          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj --force
-          
-          echo "📦 还原 OpenUtau.Plugin.Builtin..."
-          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj --force
-          
-          echo "📦 还原 OpenUtauMobile.Plugin.Renderers..."
-          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj --force
-          
-          echo "📦 还原 OpenUtauMobile (主项目)..."
-          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
-            -p:TargetFrameworks=net10.0-ios \
-            --runtime ios-arm64 \
-            --force
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj \
+            -f net10.0 \
+            -c Debug \
+            -p:RestorePackages=true \
+            -p:RestoreForce=true
 
-      - name: 验证资产文件
-        run: |
-          echo "📋 验证资产文件..."
-          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
-            if [ -f "$proj/obj/project.assets.json" ]; then
-              echo "  ✅ $proj/obj/project.assets.json 存在"
-            else
-              echo "  ❌ $proj/obj/project.assets.json 不存在"
-            fi
-          done
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj \
+            -f net10.0 \
+            -c Debug \
+            -p:RestorePackages=true \
+            -p:RestoreForce=true
 
-      - name: 编译共享项目
-        run: |
-          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -c Debug --no-restore
-          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -c Debug --no-restore
-          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -c Debug --no-restore
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj \
+            -f net10.0 \
+            -c Debug \
+            -p:RestorePackages=true \
+            -p:RestoreForce=true
 
-      - name: 编译 iOS 主项目
+      - name: 编译 iOS 主项目（自动还原）
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
+            -f net10.0-ios \
             -c Debug \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
-            --no-restore
+            -p:RestorePackages=true \
+            -p:RestoreForce=true
 
       - name: 打包 .ipa
         run: |
