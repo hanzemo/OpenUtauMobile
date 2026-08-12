@@ -1,4 +1,4 @@
-name: Build iOS App (Fix All Asset Targets)
+name: Build iOS App (Fix Asset Targets)
 
 on:
   workflow_dispatch:
@@ -24,16 +24,18 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
+      # 还原所有项目
       - name: 还原所有项目
         run: |
           echo "📦 还原共享项目..."
-          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
-          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
-          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0 --force
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0 --force
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0 --force
           
           echo "📦 还原主项目..."
-          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
+          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64 --force
 
+      # 检查并修复资产文件
       - name: 检查并修复资产文件中的目标框架
         run: |
           # 定义需要检查的项目列表
@@ -45,13 +47,14 @@ jobs:
             ASSET_FILE="$proj/obj/project.assets.json"
             
             if [ ! -f "$ASSET_FILE" ]; then
-              echo "⚠️ $ASSET_FILE 不存在，跳过"
+              echo "⚠️ $ASSET_FILE 不存在，尝试重新还原..."
+              dotnet restore $proj/$proj.csproj -p:TargetFrameworks=$target --force
               continue
             fi
             
             echo "🔍 检查 $ASSET_FILE (目标: $target)..."
             
-            # 使用 Python 检查并添加目标
+            # 使用 Python 检查并添加完整的目标结构
             python3 -c "
           import json
           import sys
@@ -66,21 +69,68 @@ jobs:
               print(f'  ❌ 读取文件失败: {e}')
               sys.exit(1)
 
+          # 检查 targets 中是否有目标框架
           if target not in data.get('targets', {}):
-              print(f'  ❌ {target} 目标不存在，正在添加...')
+              print(f'  ❌ {target} 目标不存在，正在添加完整结构...')
+              
+              # 添加完整的目标结构
               data['targets'][target] = {}
               
+              # 确保 projectFileDependencyGroups 包含目标框架
               if 'projectFileDependencyGroups' not in data:
                   data['projectFileDependencyGroups'] = {}
               if target not in data['projectFileDependencyGroups']:
                   data['projectFileDependencyGroups'][target] = []
               
+              # 确保 libraries 存在
+              if 'libraries' not in data:
+                  data['libraries'] = {}
+              
+              # 确保 packageFolders 存在
+              if 'packageFolders' not in data:
+                  data['packageFolders'] = {
+                      '/Users/runner/.nuget/packages/': {}
+                  }
+              
+              # 确保 project 部分存在
+              if 'project' not in data:
+                  data['project'] = {
+                      'restore': {
+                          'projectUniqueName': '$proj.csproj',
+                          'projectName': '$proj',
+                          'projectPath': '$proj.csproj',
+                          'packagesPath': '/Users/runner/.nuget/packages/',
+                          'outputPath': 'obj/',
+                          'projectStyle': 'PackageReference',
+                          'originalTargetFrameworks': [target]
+                      }
+                  }
+              
+              # 重新写入文件
               with open(asset_file, 'w') as f:
                   json.dump(data, f, indent=2)
-              print(f'  ✅ 已添加 {target} 目标到 {asset_file}')
+              print(f'  ✅ 已添加完整的 {target} 目标到 {asset_file}')
           else:
               print(f'  ✅ {target} 目标已存在')
           "
+          done
+
+      # 验证资产文件
+      - name: 验证资产文件
+        run: |
+          echo "📋 验证所有项目的资产文件..."
+          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
+            if [ -f "$proj/obj/project.assets.json" ]; then
+              echo "  ✅ $proj/obj/project.assets.json 存在"
+              # 检查目标框架
+              if grep -q "net10.0" "$proj/obj/project.assets.json"; then
+                echo "    ✅ 包含 net10.0 相关目标"
+              else
+                echo "    ❌ 不包含 net10.0 目标"
+              fi
+            else
+              echo "  ❌ $proj/obj/project.assets.json 不存在"
+            fi
           done
 
       - name: 编译共享项目
