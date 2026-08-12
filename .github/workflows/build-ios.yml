@@ -24,14 +24,14 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 使用 msbuild -t:Restore 替代 dotnet restore
-      - name: 还原所有项目（使用 msbuild）
+      # 关键修改：使用 dotnet msbuild 替代 msbuild
+      - name: 还原所有项目（使用 dotnet msbuild）
         run: |
-          msbuild -t:Restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
-          msbuild -t:Restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
-          msbuild -t:Restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
-          msbuild -t:Restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj -p:TargetFrameworks=net10.0-ios -p:RuntimeIdentifier=ios-arm64
-          msbuild -t:Restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios -p:RuntimeIdentifier=ios-arm64
+          dotnet msbuild -t:Restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
+          dotnet msbuild -t:Restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
+          dotnet msbuild -t:Restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
+          dotnet msbuild -t:Restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj -p:TargetFrameworks=net10.0-ios -p:RuntimeIdentifier=ios-arm64
+          dotnet msbuild -t:Restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios -p:RuntimeIdentifier=ios-arm64
 
       - name: 编译生成未签名的 .app 包
         run: |
