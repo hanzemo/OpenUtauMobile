@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Maui.Alerts;
+using CommunityToolkit.Maui.Alerts;
 using CommunityToolkit.Maui.Views;
 using DynamicData.Binding;
 using OpenUtauMobile.Views.Controls;
@@ -15,6 +15,7 @@ public partial class HomePage : ContentPage
 {
     private HomePageViewModel _viewModel;
     private bool _isExit = false; // 退出标志
+    
     public HomePage()
 	{
 		InitializeComponent();
@@ -53,22 +54,51 @@ public partial class HomePage : ContentPage
         _viewModel.RecentProjectsPaths = new ObservableCollectionExtended<string>(OpenUtau.Core.Util.Preferences.Default.RecentFiles);
     }
 
-
     private async void ButtonNewProject_Clicked(object sender, EventArgs e)
     {
         await Navigation.PushModalAsync(new EditPage(string.Empty), false);
     }
+    
     /// <summary>
     /// 支持的工程文件后缀名
     /// </summary>
     public string[] ProjectFileSuffix { get; } = [".ustx", ".vsqx", ".ust", ".mid", ".midi", ".ufdata", ".musicxml"];
+    
+    /// <summary>
+    /// 打开工程 - 直接显示 Projects 目录下的文件列表
+    /// </summary>
     private async void ButtonOpenProject_Clicked(object sender, EventArgs e)
     {
-        string projectPath = await ObjectProvider.PickFile(ProjectFileSuffix, this);
-        if (!string.IsNullOrEmpty(projectPath))
+        string projectsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Projects");
+        if (!Directory.Exists(projectsDir))
         {
-            await Navigation.PushModalAsync(new EditPage(projectPath), false);
+            Directory.CreateDirectory(projectsDir);
         }
+
+        var files = Directory.GetFiles(projectsDir)
+            .Where(f => ProjectFileSuffix.Contains(Path.GetExtension(f).ToLower()))
+            .ToList();
+
+        if (files.Count == 0)
+        {
+            await Toast.Make("Projects 目录中没有找到工程文件，请先导入", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+            return;
+        }
+
+        var fileNames = files.Select(f => Path.GetFileName(f)).ToArray();
+        var selectedFileName = await DisplayActionSheet(
+            "选择工程文件",
+            AppResources.CancelText ?? "取消",
+            null,
+            fileNames);
+
+        if (string.IsNullOrEmpty(selectedFileName) || selectedFileName == (AppResources.CancelText ?? "取消"))
+        {
+            return;
+        }
+
+        string selectedPath = files.First(f => Path.GetFileName(f) == selectedFileName);
+        await Navigation.PushModalAsync(new EditPage(selectedPath), false);
     }
 
     private void ButtonOpenSingerManage_Clicked(object sender, EventArgs e)
@@ -86,7 +116,7 @@ public partial class HomePage : ContentPage
     /// </summary>
     /// <param name="sender"></param>
     /// <param name="e"></param>
-    private void ButtonOpenRecent_Clicked(object sender, EventArgs e)
+    private async void ButtonOpenRecent_Clicked(object sender, EventArgs e)
     {
         if (sender is Button button && button.BindingContext is string projectPath)
         {
@@ -96,18 +126,18 @@ public partial class HomePage : ContentPage
             }
             if (!File.Exists(projectPath))
             {
-                Toast.Make(AppResources.FileNotFoundToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                await Toast.Make(AppResources.FileNotFoundToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
                 return;
             }
             foreach (string suffix in ProjectFileSuffix)
             {
-                if (projectPath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) // 忽略大小写比较
+                if (projectPath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 {
-                    Navigation.PushModalAsync(new EditPage(projectPath), false);
+                    await Navigation.PushModalAsync(new EditPage(projectPath), false);
                     return;
                 }
             }
-            Toast.Make(AppResources.IncorrectProjectFileToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+            await Toast.Make(AppResources.IncorrectProjectFileToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
         }
     }
 }
