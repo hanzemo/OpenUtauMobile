@@ -24,15 +24,22 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 只还原共享依赖项目，不碰解决方案
+      # 还原共享依赖项目
       - name: 还原共享依赖项目
         run: |
           dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
           dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
           dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
 
-      # 关键修改：编译主项目时跳过依赖检查
-      - name: 编译 iOS 主项目（跳过依赖检查）
+      # 关键修改：先编译共享项目，生成所需的 .dll 文件
+      - name: 编译共享依赖项目
+        run: |
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug
+
+      # 编译主项目时跳过依赖检查，因为共享项目已经编译好了
+      - name: 编译 iOS 主项目
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
