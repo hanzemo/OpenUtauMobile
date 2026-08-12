@@ -24,7 +24,6 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 还原所有项目（共享项目 + 主项目）
       - name: 还原所有项目
         run: |
           echo "📦 还原共享项目..."
@@ -35,11 +34,9 @@ jobs:
           echo "📦 还原主项目..."
           dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
 
-      # 检查并修复所有项目的资产文件
       - name: 检查并修复资产文件中的目标框架
         run: |
-          # 定义需要检查的项目列表及其对应的目标框架
-          # 格式: "项目路径:目标框架"
+          # 定义需要检查的项目列表
           PROJECTS="OpenUtau.Core:net10.0 OpenUtau.Plugin.Builtin:net10.0 OpenUtauMobile.Plugin.Renderers:net10.0 OpenUtauMobile:net10.0-ios"
           
           for entry in $PROJECTS; do
@@ -54,44 +51,44 @@ jobs:
             
             echo "🔍 检查 $ASSET_FILE (目标: $target)..."
             
-            python3 <<EOF
+            # 使用 Python 检查并添加目标
+            python3 -c "
           import json
-          import os
+          import sys
 
-          asset_file = "$ASSET_FILE"
-          target = "$target"
+          asset_file = '$ASSET_FILE'
+          target = '$target'
           
-          with open(asset_file, 'r') as f:
-              data = json.load(f)
+          try:
+              with open(asset_file, 'r') as f:
+                  data = json.load(f)
+          except Exception as e:
+              print(f'  ❌ 读取文件失败: {e}')
+              sys.exit(1)
 
-          # 检查 targets 中是否有目标框架
           if target not in data.get('targets', {}):
-              print(f"  ❌ {target} 目标不存在，正在添加...")
+              print(f'  ❌ {target} 目标不存在，正在添加...')
               data['targets'][target] = {}
               
-              # 确保 projectFileDependencyGroups 包含目标框架
               if 'projectFileDependencyGroups' not in data:
                   data['projectFileDependencyGroups'] = {}
               if target not in data['projectFileDependencyGroups']:
                   data['projectFileDependencyGroups'][target] = []
               
-              # 重新写入文件
               with open(asset_file, 'w') as f:
                   json.dump(data, f, indent=2)
-              print(f"  ✅ 已添加 {target} 目标到 {asset_file}")
+              print(f'  ✅ 已添加 {target} 目标到 {asset_file}')
           else:
-              print(f"  ✅ {target} 目标已存在")
-EOF
+              print(f'  ✅ {target} 目标已存在')
+          "
           done
 
-      # 编译共享项目
       - name: 编译共享项目
         run: |
           dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug --no-restore
           dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug --no-restore
           dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug --no-restore
 
-      # 编译 iOS 主项目
       - name: 编译 iOS 主项目
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
