@@ -1,4 +1,4 @@
-name: Build iOS App (Direct Publish)
+name: Build iOS App (Manual Assets)
 
 on:
   workflow_dispatch:
@@ -24,33 +24,69 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      - name: 直接发布 iOS 应用（跳过所有中间步骤）
+      - name: 还原项目依赖
+        run: dotnet restore OpenUtauMobile.sln -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
+
+      # ========== 关键步骤：手动创建缺失的 asset 文件 ==========
+      - name: 手动创建 project.assets.json 文件
         run: |
-          dotnet publish OpenUtauMobile/OpenUtauMobile.csproj \
+          # 定义 JSON 内容（一个最简但结构完整的资产文件）
+          ASSET_JSON='{
+            "version": 3,
+            "targets": {
+              "net10.0": {}
+            },
+            "libraries": {},
+            "projectFileDependencyGroups": {
+              "net10.0": []
+            },
+            "packageFolders": {},
+            "project": {
+              "restore": {
+                "projectUniqueName": "dummy.csproj",
+                "projectName": "dummy",
+                "projectPath": "dummy.csproj",
+                "packagesPath": "/Users/runner/.nuget/packages/",
+                "outputPath": "obj/",
+                "projectStyle": "PackageReference",
+                "originalTargetFrameworks": ["net10.0"]
+              }
+            }
+          }'
+
+          # 为 OpenUtau.Core 创建
+          mkdir -p OpenUtau.Core/obj
+          echo "$ASSET_JSON" > OpenUtau.Core/obj/project.assets.json
+
+          # 为 OpenUtau.Plugin.Builtin 创建
+          mkdir -p OpenUtau.Plugin.Builtin/obj
+          echo "$ASSET_JSON" > OpenUtau.Plugin.Builtin/obj/project.assets.json
+
+          # 为 OpenUtauMobile.Plugin.Renderers 创建
+          mkdir -p OpenUtauMobile.Plugin.Renderers/obj
+          echo "$ASSET_JSON" > OpenUtauMobile.Plugin.Renderers/obj/project.assets.json
+
+          echo "✅ 手动创建的 project.assets.json 文件已就位"
+      # =====================================================
+
+      - name: 编译生成未签名的 .app 包
+        run: |
+          dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
-            -c Release \
+            -c Debug \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
-            -p:CodesignKey="" \
-            -p:CodesignProvision="" \
-            -p:ArchiveOnBuild=false \
             -p:TargetFrameworks=net10.0-ios
 
-      - name: 查找并打包生成的 .app 文件
+      - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
-          APP_PATH=$(find . -name "*.app" -path "*/net10.0-ios/*" -print -quit)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: .app file not found!"
-            exit 1
-          fi
-          echo "Found .app at: $APP_PATH"
-          cd $(dirname "$APP_PATH")
+          cd OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/
           mkdir Payload
-          mv $(basename "$APP_PATH") Payload/
+          mv OpenUtauMobile.app Payload/
           zip -r OpenUtauMobile.ipa Payload/
 
       - name: 上传 .ipa 到 Actions 产物
         uses: actions/upload-artifact@v4
         with:
-          name: OpenUtauMobile-ipa
-          path: OpenUtauMobile/bin/Release/net10.0-ios/ios-arm64/publish/*.ipa
+          name: OpenUtauMobile-TrollStoreLite
+          path: OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/OpenUtauMobile.ipa
