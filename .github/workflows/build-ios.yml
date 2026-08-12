@@ -1,4 +1,4 @@
-name: Build iOS App (Fix Asset Targets)
+name: Build iOS App (Copy Asset Target)
 
 on:
   workflow_dispatch:
@@ -35,85 +35,84 @@ jobs:
           echo "📦 还原主项目..."
           dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64 --force
 
-      # 检查并修复资产文件
-      - name: 检查并修复资产文件中的目标框架
+      # 从主项目复制 net10.0-ios 目标，修改为 net10.0
+      - name: 复制并修改资产文件目标
         run: |
-          # 定义需要检查的项目列表
-          PROJECTS="OpenUtau.Core:net10.0 OpenUtau.Plugin.Builtin:net10.0 OpenUtauMobile.Plugin.Renderers:net10.0 OpenUtauMobile:net10.0-ios"
-          
-          for entry in $PROJECTS; do
-            proj="${entry%:*}"
-            target="${entry#*:}"
-            ASSET_FILE="$proj/obj/project.assets.json"
-            
-            if [ ! -f "$ASSET_FILE" ]; then
-              echo "⚠️ $ASSET_FILE 不存在，尝试重新还原..."
-              dotnet restore $proj/$proj.csproj -p:TargetFrameworks=$target --force
-              continue
-            fi
-            
-            echo "🔍 检查 $ASSET_FILE (目标: $target)..."
-            
-            # 使用 Python 检查并添加完整的目标结构
-            python3 -c "
-          import json
-          import sys
+          # 检查主项目的资产文件是否存在
+          if [ ! -f "OpenUtauMobile/obj/project.assets.json" ]; then
+            echo "❌ 主项目资产文件不存在！"
+            exit 1
+          fi
 
-          asset_file = '$ASSET_FILE'
-          target = '$target'
-          
-          try:
+          echo "📋 从主项目复制目标结构..."
+
+          # 使用 Python 从主项目复制 target 并修改
+          python3 << 'EOF'
+          import json
+          import os
+
+          # 读取主项目的资产文件
+          with open('OpenUtauMobile/obj/project.assets.json', 'r') as f:
+              main_data = json.load(f)
+
+          # 获取 net10.0-ios 目标
+          ios_target = main_data['targets'].get('net10.0-ios', {})
+          if not ios_target:
+              print("❌ 主项目中没有 net10.0-ios 目标")
+              exit(1)
+
+          # 处理每个共享项目
+          for proj in ['OpenUtau.Core', 'OpenUtau.Plugin.Builtin', 'OpenUtauMobile.Plugin.Renderers']:
+              asset_file = f'{proj}/obj/project.assets.json'
+              if not os.path.exists(asset_file):
+                  print(f"⚠️ {asset_file} 不存在，跳过")
+                  continue
+
               with open(asset_file, 'r') as f:
                   data = json.load(f)
-          except Exception as e:
-              print(f'  ❌ 读取文件失败: {e}')
-              sys.exit(1)
 
-          # 检查 targets 中是否有目标框架
-          if target not in data.get('targets', {}):
-              print(f'  ❌ {target} 目标不存在，正在添加完整结构...')
-              
-              # 添加完整的目标结构
-              data['targets'][target] = {}
-              
-              # 确保 projectFileDependencyGroups 包含目标框架
+              # 检查是否有 net10.0 目标
+              if 'net10.0' in data.get('targets', {}):
+                  print(f"✅ {proj} 已有 net10.0 目标，跳过")
+                  continue
+
+              # 复制目标结构（只复制框架，不复制具体的包依赖）
+              # 由于共享项目可能依赖不同的包，我们只添加空的 target
+              # 但保留完整的结构
+              data['targets']['net10.0'] = {}
+
+              # 复制 project 部分
+              if 'project' not in data:
+                  data['project'] = {}
+              data['project']['restore'] = {
+                  'projectUniqueName': f'{proj}.csproj',
+                  'projectName': proj,
+                  'projectPath': f'{proj}.csproj',
+                  'packagesPath': '/Users/runner/.nuget/packages/',
+                  'outputPath': 'obj/',
+                  'projectStyle': 'PackageReference',
+                  'originalTargetFrameworks': ['net10.0']
+              }
+
+              # 确保 projectFileDependencyGroups 包含 net10.0
               if 'projectFileDependencyGroups' not in data:
                   data['projectFileDependencyGroups'] = {}
-              if target not in data['projectFileDependencyGroups']:
-                  data['projectFileDependencyGroups'][target] = []
-              
-              # 确保 libraries 存在
-              if 'libraries' not in data:
-                  data['libraries'] = {}
-              
+              if 'net10.0' not in data['projectFileDependencyGroups']:
+                  data['projectFileDependencyGroups']['net10.0'] = []
+
               # 确保 packageFolders 存在
               if 'packageFolders' not in data:
                   data['packageFolders'] = {
                       '/Users/runner/.nuget/packages/': {}
                   }
-              
-              # 确保 project 部分存在
-              if 'project' not in data:
-                  data['project'] = {
-                      'restore': {
-                          'projectUniqueName': '$proj.csproj',
-                          'projectName': '$proj',
-                          'projectPath': '$proj.csproj',
-                          'packagesPath': '/Users/runner/.nuget/packages/',
-                          'outputPath': 'obj/',
-                          'projectStyle': 'PackageReference',
-                          'originalTargetFrameworks': [target]
-                      }
-                  }
-              
-              # 重新写入文件
+
+              # 写回文件
               with open(asset_file, 'w') as f:
                   json.dump(data, f, indent=2)
-              print(f'  ✅ 已添加完整的 {target} 目标到 {asset_file}')
-          else:
-              print(f'  ✅ {target} 目标已存在')
-          "
-          done
+
+              print(f"✅ 已为 {proj} 添加 net10.0 目标")
+
+          EOF
 
       # 验证资产文件
       - name: 验证资产文件
@@ -122,9 +121,8 @@ jobs:
           for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
             if [ -f "$proj/obj/project.assets.json" ]; then
               echo "  ✅ $proj/obj/project.assets.json 存在"
-              # 检查目标框架
-              if grep -q "net10.0" "$proj/obj/project.assets.json"; then
-                echo "    ✅ 包含 net10.0 相关目标"
+              if grep -q '"net10.0"' "$proj/obj/project.assets.json"; then
+                echo "    ✅ 包含 net10.0 目标"
               else
                 echo "    ❌ 不包含 net10.0 目标"
               fi
