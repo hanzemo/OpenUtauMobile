@@ -1,4 +1,4 @@
-name: Build iOS App (Build Handles Restore)
+name: Build iOS App (TrollStore Lite Compatible)
 
 on:
   workflow_dispatch:
@@ -11,59 +11,43 @@ jobs:
       - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: 安装 .NET 10.0 SDK
+      - name: 安装 .NET 9.0 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '9.0.x'
 
       - name: 切换 Xcode 到 26.5 版本
         run: |
           sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
           xcodebuild -version
 
-      - name: 安装 iOS 工作负载
-        run: dotnet workload install ios
+      - name: 安装 MAUI iOS 工作负载
+        run: dotnet workload install maui-ios
 
-      # 直接编译共享项目，让 dotnet build 自己处理还原
-      - name: 编译共享项目（自动还原）
-        run: |
-          dotnet build OpenUtau.Core/OpenUtau.Core.csproj \
-            -f net10.0 \
-            -c Debug \
-            -p:RestorePackages=true \
-            -p:RestoreForce=true
+      - name: 还原依赖 (仅 iOS)
+        run: dotnet restore -p:TargetFramework=net9.0-ios
 
-          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj \
-            -f net10.0 \
-            -c Debug \
-            -p:RestorePackages=true \
-            -p:RestoreForce=true
-
-          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj \
-            -f net10.0 \
-            -c Debug \
-            -p:RestorePackages=true \
-            -p:RestoreForce=true
-
-      - name: 编译 iOS 主项目（自动还原）
+      # 关键修改：使用 build 直接编译出 .app，完全绕过归档和签名
+      - name: 编译生成未签名的 .app 包
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
-            -f net10.0-ios \
+            -f net9.0-ios \
             -c Debug \
             -p:RuntimeIdentifier=ios-arm64 \
-            -p:EnableCodeSigning=false \
-            -p:RestorePackages=true \
-            -p:RestoreForce=true
+            -p:EnableCodeSigning=false
 
-      - name: 打包 .ipa
+      - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
-          cd OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/
-          mkdir -p Payload
-          mv OpenUtauMobile.app Payload/ 2>/dev/null || echo "未找到 .app"
-          zip -r OpenUtauMobile.ipa Payload/ 2>/dev/null || echo "打包失败"
+          # 进入编译输出目录
+          cd OpenUtauMobile/bin/Debug/net9.0-ios/ios-arm64/
+          # 创建 Payload 文件夹并将 .app 移入
+          mkdir Payload
+          mv OpenUtauMobile.app Payload/
+          # 压缩为 .ipa 文件
+          zip -r OpenUtauMobile.ipa Payload/
 
-      - name: 上传 .ipa
+      - name: 上传 .ipa 到 Actions 产物
         uses: actions/upload-artifact@v4
         with:
           name: OpenUtauMobile-TrollStoreLite
-          path: OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/OpenUtauMobile.ipa
+          path: OpenUtauMobile/bin/Debug/net9.0-ios/ios-arm64/OpenUtauMobile.ipa
