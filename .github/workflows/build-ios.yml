@@ -11,10 +11,10 @@ jobs:
       - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: 安装 .NET 9.0 SDK
+      - name: 安装 .NET 10.0 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: 切换 Xcode 到 26.5 版本
         run: |
@@ -24,23 +24,21 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 关键修改：还原依赖时也指定仅 iOS
       - name: 还原依赖 (仅 iOS)
-        run: dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net9.0-ios
+        run: dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios
 
-      # 关键修改：编译时明确指定仅针对 iOS 平台
       - name: 编译生成未签名的 .app 包
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
-            -f net9.0-ios \
+            -f net10.0-ios \
             -c Debug \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
-            -p:TargetFrameworks=net9.0-ios
+            -p:TargetFrameworks=net10.0-ios
 
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
-          cd OpenUtauMobile/bin/Debug/net9.0-ios/ios-arm64/
+          cd OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/
           mkdir Payload
           mv OpenUtauMobile.app Payload/
           zip -r OpenUtauMobile.ipa Payload/
@@ -49,4 +47,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenUtauMobile-TrollStoreLite
-          path: OpenUtauMobile/bin/Debug/net9.0-ios/ios-arm64/OpenUtauMobile.ipa
+          path: OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/OpenUtauMobile.ipa
