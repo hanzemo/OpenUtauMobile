@@ -24,9 +24,26 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 关键修改：还原整个解决方案，确保所有子项目都被处理
-      - name: 还原所有项目依赖
-        run: dotnet restore OpenUtauMobile.sln
+      - name: 还原共享依赖项目
+        run: |
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj \
+            -p:TargetFrameworks=net10.0 \
+            --runtime ios-arm64
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj \
+            -p:TargetFrameworks=net10.0 \
+            --runtime ios-arm64
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj \
+            -p:TargetFrameworks=net10.0 \
+            --runtime ios-arm64
+
+      - name: 还原 iOS 平台项目和主项目
+        run: |
+          dotnet restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj \
+            -p:TargetFrameworks=net10.0-ios \
+            --runtime ios-arm64
+          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
+            -p:TargetFrameworks=net10.0-ios \
+            --runtime ios-arm64
 
       - name: 编译生成未签名的 .app 包
         run: |
