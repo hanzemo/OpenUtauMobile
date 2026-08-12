@@ -1,4 +1,4 @@
-name: Build iOS App (Compile Shared First)
+name: Build iOS App (Full Restore with Asset Copy)
 
 on:
   workflow_dispatch:
@@ -24,53 +24,62 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      - name: 还原主项目（让 dotnet 自己处理）
+      # 第一步：还原所有项目
+      - name: 还原所有项目
         run: |
-          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
-            -p:TargetFrameworks=net10.0-ios \
-            -p:RuntimeIdentifiers=ios-arm64 \
-            --runtime ios-arm64
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
+          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
 
-      - name: 为共享项目创建资产文件（跳过还原）
+      # 第二步：查找并复制资产文件到正确位置
+      - name: 查找并复制生成的资产文件
         run: |
-          ASSET_JSON='{"version":3,"targets":{"net10.0":{}},"libraries":{},"projectFileDependencyGroups":{"net10.0":[]},"packageFolders":{},"project":{"restore":{"projectUniqueName":"dummy.csproj","projectName":"dummy","projectPath":"dummy.csproj","packagesPath":"/Users/runner/.nuget/packages/","outputPath":"obj/","projectStyle":"PackageReference","originalTargetFrameworks":["net10.0"]}}}'
-          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers; do
-            mkdir -p $proj/obj
-            echo "$ASSET_JSON" > $proj/obj/project.assets.json
+          echo "🔍 查找所有 project.assets.json 文件..."
+          find . -name "project.assets.json" -type f 2>/dev/null | while read -r file; do
+            echo "  找到: $file"
+            # 提取项目名称（从路径中获取第一个目录）
+            proj_name=$(echo "$file" | cut -d'/' -f2)
+            # 目标 obj 目录
+            target_obj="$(pwd)/$proj_name/obj/"
+            if [ -d "$target_obj" ]; then
+              echo "  📁 复制到: $target_obj"
+              cp "$file" "$target_obj/"
+            else
+              echo "  ⚠️ 目标目录不存在: $target_obj"
+            fi
           done
-          echo "✅ 共享项目的资产文件已创建"
 
-      # 关键修改：先编译共享项目，生成 .dll 文件
+          # 额外确保主项目的 obj 目录有资产文件
+          echo ""
+          echo "📋 验证关键项目的资产文件..."
+          for proj in OpenUtau.Core OpenUtau.Plugin.Builtin OpenUtauMobile.Plugin.Renderers OpenUtauMobile; do
+            if [ -f "$proj/obj/project.assets.json" ]; then
+              echo "  ✅ $proj/obj/project.assets.json 存在"
+            else
+              echo "  ❌ $proj/obj/project.assets.json 不存在"
+            fi
+          done
+
+      # 第三步：编译共享项目
       - name: 编译共享项目
         run: |
-          dotnet build OpenUtau.Core/OpenUtau.Core.csproj \
-            -f net10.0 \
-            -c Debug \
-            --no-dependencies \
-            --no-restore
-          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj \
-            -f net10.0 \
-            -c Debug \
-            --no-dependencies \
-            --no-restore
-          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj \
-            -f net10.0 \
-            -c Debug \
-            --no-dependencies \
-            --no-restore
-          echo "✅ 共享项目编译完成"
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug --no-restore
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug --no-restore
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug --no-restore
 
+      # 第四步：编译 iOS 主项目
       - name: 编译 iOS 主项目
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
             -c Debug \
-            --no-dependencies \
-            --no-restore \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
             -p:TargetFrameworks=net10.0-ios
 
+      # 第五步：打包
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
           cd OpenUtauMobile/bin/Debug/net10.0-ios/ios-arm64/
