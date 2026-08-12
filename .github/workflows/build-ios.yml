@@ -26,18 +26,14 @@ jobs:
 
       - name: 还原共享依赖项目
         run: |
-          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj
-          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj
-          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
 
       - name: 还原 iOS 平台项目和主项目
         run: |
-          dotnet restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj \
-            -p:TargetFrameworks=net10.0-ios \
-            --runtime ios-arm64
-          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj \
-            -p:TargetFrameworks=net10.0-ios \
-            --runtime ios-arm64
+          dotnet restore OpenUtauMobile.iOS/OpenUtauMobile.iOS.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
+          dotnet restore OpenUtauMobile/OpenUtauMobile.csproj -p:TargetFrameworks=net10.0-ios --runtime ios-arm64
 
       - name: 编译生成未签名的 .app 包
         run: |
