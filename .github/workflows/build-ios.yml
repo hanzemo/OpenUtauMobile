@@ -24,22 +24,19 @@ jobs:
       - name: 安装 MAUI iOS 工作负载
         run: dotnet workload install maui-ios
 
-      # 还原共享依赖项目
-      - name: 还原共享依赖项目
+      - name: 还原共享依赖项目（统一输出目录）
         run: |
-          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0
-          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0
-          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0
+          dotnet restore OpenUtau.Core/OpenUtau.Core.csproj -p:TargetFrameworks=net10.0 -p:BaseIntermediateOutputPath=obj/
+          dotnet restore OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -p:TargetFrameworks=net10.0 -p:BaseIntermediateOutputPath=obj/
+          dotnet restore OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -p:TargetFrameworks=net10.0 -p:BaseIntermediateOutputPath=obj/
 
-      # 关键修改：先编译共享项目，生成所需的 .dll 文件
-      - name: 编译共享依赖项目
+      - name: 编译共享依赖项目（统一输出目录）
         run: |
-          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug
-          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug
-          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug
+          dotnet build OpenUtau.Core/OpenUtau.Core.csproj -f net10.0 -c Debug -p:BaseIntermediateOutputPath=obj/
+          dotnet build OpenUtau.Plugin.Builtin/OpenUtau.Plugin.Builtin.csproj -f net10.0 -c Debug -p:BaseIntermediateOutputPath=obj/
+          dotnet build OpenUtauMobile.Plugin.Renderers/OpenUtauMobile.Plugin.Renderers.csproj -f net10.0 -c Debug -p:BaseIntermediateOutputPath=obj/
 
-      # 编译主项目时跳过依赖检查，因为共享项目已经编译好了
-      - name: 编译 iOS 主项目
+      - name: 编译 iOS 主项目（统一输出目录）
         run: |
           dotnet build OpenUtauMobile/OpenUtauMobile.csproj \
             -f net10.0-ios \
@@ -47,7 +44,8 @@ jobs:
             --no-dependencies \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:EnableCodeSigning=false \
-            -p:TargetFrameworks=net10.0-ios
+            -p:TargetFrameworks=net10.0-ios \
+            -p:BaseIntermediateOutputPath=obj/
 
       - name: 手动打包为 .ipa (兼容 TrollStore Lite)
         run: |
