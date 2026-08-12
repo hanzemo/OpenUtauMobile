@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Maui.Alerts;
+using CommunityToolkit.Maui.Alerts;
 using OpenUtauMobile.Views.Controls;
 using Microsoft.Maui.Controls;
 using OpenUtau.Audio;
@@ -24,6 +24,7 @@ namespace OpenUtauMobile.Utils
         public static Random Random { get; } = new Random();
         public static IAppLifeCycleHelper AppLifeCycleHelper { get; set; } = null!;
         public static SKTypeface NotoSansCJKscRegularTypeface { get; set; } = null!;
+        
         public static void Initialize()
         {
 #if ANDROID
@@ -32,7 +33,7 @@ namespace OpenUtauMobile.Utils
             AppLifeCycleHelper = new OpenUtauMobile.Platforms.Android.Utils.AndroidAppLifeCycleHelper();
 #elif IOS
             ExternalStorageService = new OpenUtauMobile.Platforms.iOS.Utils.Permission.ExternalStorageService();
-            AudioOutput = new OpenUtau.Audio.DummyAudioOutput(); // iOS平台使用DummyAudioOutput作为占位符
+            AudioOutput = new OpenUtau.Audio.DummyAudioOutput();
             AppLifeCycleHelper = new OpenUtauMobile.Platforms.iOS.Utils.iOSAppLifeCycleHelper();
 #elif WINDOWS
             ExternalStorageService = new OpenUtauMobile.Platforms.Windows.Utils.Permission.ExternalStorageService();
@@ -53,6 +54,7 @@ namespace OpenUtauMobile.Utils
                 NotoSansCJKscRegularTypeface = SKTypeface.Default;
             }
         }
+        
         public static async Task<string> PickFile(string[] types, ContentPage context)
         {
             if (ExternalStorageService == null)
@@ -83,7 +85,6 @@ namespace OpenUtauMobile.Utils
                         case "ust":
                         case "ufdata":
                         case "musicxml":
-                            // 自定义文件类型使用 public.data
                             utTypes.Add("public.data");
                             break;
                         case "mid":
@@ -107,7 +108,6 @@ namespace OpenUtauMobile.Utils
                             break;
                     }
                 }
-                // 去重
                 utTypes = utTypes.Distinct().ToList();
                 
                 var customFileTypes = new Dictionary<DevicePlatform, IEnumerable<string>>
@@ -119,6 +119,7 @@ namespace OpenUtauMobile.Utils
                     PickerTitle = AppResources.SelectFileToast,
                     FileTypes = new FilePickerFileType(customFileTypes)
                 };
+                
                 var result = await FilePicker.Default.PickAsync(options);
                 if (result != null)
                 {
@@ -134,7 +135,6 @@ namespace OpenUtauMobile.Utils
                     }
                     if (!typeMatched)
                     {
-                        // 文件类型不匹配
                         string stringBuilder = string.Format(AppResources.WrongFileTypeToast, string.Join("，*", types));
                         await Toast.Make(stringBuilder, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
                         return string.Empty;
@@ -151,6 +151,21 @@ namespace OpenUtauMobile.Utils
                         {
                             Directory.CreateDirectory(importDir);
                         }
+                        
+                        // 检查目录是否可写
+                        try
+                        {
+                            string testFile = Path.Combine(importDir, "_test.tmp");
+                            File.WriteAllText(testFile, "test");
+                            File.Delete(testFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "Documents/Import 目录不可写");
+                            await Toast.Make("存储目录不可写，请检查权限", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                            return string.Empty;
+                        }
+                        
                         string destPath = Path.Combine(importDir, fileName);
                         
                         // 如果文件已存在，添加时间戳避免冲突
@@ -174,8 +189,9 @@ namespace OpenUtauMobile.Utils
                     catch (Exception copyEx)
                     {
                         Log.Error(copyEx, "iOS: Failed to copy file from picker");
-                        // 如果复制失败，尝试直接返回路径（可能是应用内部的文件）
-                        return result.FullPath;
+                        // 显示错误提示给用户
+                        await Toast.Make("文件复制失败，请检查存储空间或权限", CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                        return string.Empty;
                     }
                 }
                 return string.Empty;
@@ -189,9 +205,8 @@ namespace OpenUtauMobile.Utils
             if (await RequestStoragePermissionAsync())
             {
 #if !WINDOWS
-            await Toast.Make(AppResources.SelectFileToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                await Toast.Make(AppResources.SelectFileToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
 #endif
-                // 选择路径
                 var filePickPopup = new FilePickerPopup(types);
                 object? result = await context.ShowPopupAsync(filePickPopup);
                 if (result is string selectedPath)
@@ -202,7 +217,7 @@ namespace OpenUtauMobile.Utils
                     }
                     foreach (string type in types)
                     {
-                        if (selectedPath.EndsWith(type, StringComparison.OrdinalIgnoreCase)) // 忽略大小写比较
+                        if (selectedPath.EndsWith(type, StringComparison.OrdinalIgnoreCase))
                         {
                             return selectedPath;
                         }
@@ -228,7 +243,6 @@ namespace OpenUtauMobile.Utils
                 throw new InvalidOperationException("ExternalStorageService is not initialized. Call ObjectProvider.Initialize() first.");
             }
 #if IOS
-            // iOS 保存到应用的 Documents/Projects 目录
             try
             {
                 string projectsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Projects");
@@ -238,7 +252,6 @@ namespace OpenUtauMobile.Utils
                 }
                 
                 string fileName = string.IsNullOrEmpty(initialFileName) ? $"project_{DateTime.Now:yyyyMMddHHmmss}" : initialFileName;
-                // 确保文件有正确的扩展名
                 if (types.Length > 0 && !fileName.EndsWith(types[0], StringComparison.OrdinalIgnoreCase))
                 {
                     fileName += types[0];
@@ -246,7 +259,6 @@ namespace OpenUtauMobile.Utils
                 
                 string filePath = Path.Combine(projectsDir, fileName);
                 
-                // 如果文件已存在，添加数字后缀
                 int counter = 1;
                 string baseName = Path.GetFileNameWithoutExtension(fileName);
                 string ext = Path.GetExtension(fileName);
@@ -268,7 +280,7 @@ namespace OpenUtauMobile.Utils
             if (await RequestStoragePermissionAsync())
             {
 #if !WINDOWS
-            await Toast.Make(AppResources.SelectSaveLocationToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
+                await Toast.Make(AppResources.SelectSaveLocationToast, CommunityToolkit.Maui.Core.ToastDuration.Short, 16).Show();
 #endif
                 var fileSaverPopup = new FileSaverPopup(types, initialDirectory, initialFileName);
                 object? result = await context.ShowPopupAsync(fileSaverPopup);
